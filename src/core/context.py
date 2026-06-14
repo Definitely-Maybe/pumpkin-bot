@@ -49,14 +49,19 @@ class ContextAssembler:
         if self_context:
             extra.append(self_context)
 
-        # 5. 温记忆
+        # 5. 南瓜最近生活事件（可选素材，不强制分享）
+        life_context = await self._build_life_context(session, user_message)
+        if life_context:
+            extra.append(life_context)
+
+        # 6. 温记忆
         if session.warm_summary:
             extra.append(
                 "## 你们之前的聊天（摘要）\n"
                 f"南瓜记得这段时间和这个人聊了：{session.warm_summary}"
             )
 
-        # 6. 冷记忆（关联触发：聊到猫 → 想起用户怕猫）
+        # 7. 冷记忆（关联触发：聊到猫 → 想起用户怕猫）
         if session.cold_notes:
             self.cold_index.build(session.cold_notes)
             triggered = self.cold_index.search(user_message, max_results=3)
@@ -67,7 +72,7 @@ class ContextAssembler:
                     + "\n".join(f"- {t}" for t in triggered)
                 )
 
-        # 7. 重要记忆（情感加权召回）
+        # 8. 重要记忆（情感加权召回）
         if self.db:
             from ..memory.recall_ranker import get_important_memories, format_important_memories
             important = await get_important_memories(self.db, session.user.user_id, limit=3)
@@ -127,3 +132,25 @@ class ContextAssembler:
             f"你们的关系：{user.relationship_type.value}（熟悉度 {user.familiarity_score:.2f}）\n"
             f"互动次数：{user.interaction_count}，深度话题：{user.deep_topics_count}"
         )
+
+    async def _build_life_context(self, session: UserSession, user_message: str) -> str:
+        if not self.db:
+            return ""
+        try:
+            from ..storage import queries as q
+            from ..simulation.life_context_selector import LifeContextSelector
+            from ..simulation.life_receptivity import LifeReceptivity
+
+            events = await q.get_recent_life_events_for_user(
+                self.db,
+                session.user.user_id,
+                limit=10,
+                unshared_only=True,
+            )
+            messages = [*session.history, {"role": "user", "content": user_message}]
+            receptivity = LifeReceptivity.estimate(messages)
+            selector = LifeContextSelector()
+            candidate = selector.select(session.user, user_message, events, receptivity)
+            return selector.format_for_prompt(candidate)
+        except Exception:
+            return ""
