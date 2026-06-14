@@ -205,6 +205,29 @@ async def count_proactive_today(conn: aiosqlite.Connection, user_id: str) -> int
     return row["cnt"] if row else 0
 
 
+async def count_proactive_today_by_types(
+    conn: aiosqlite.Connection,
+    user_id: str,
+    trigger_types: list[TriggerType],
+) -> int:
+    """Count sent proactive messages for a user today by trigger type."""
+    if not trigger_types:
+        return 0
+    today = datetime.now().strftime("%Y-%m-%d")
+    placeholders = ",".join("?" for _ in trigger_types)
+    values = [user_id, today, *(t.value for t in trigger_types)]
+    cursor = await conn.execute(
+        f"""SELECT COUNT(*) as cnt FROM proactive_queue
+            WHERE user_id = ?
+            AND date(created_at) = ?
+            AND status = 'sent'
+            AND trigger_type IN ({placeholders})""",
+        values,
+    )
+    row = await cursor.fetchone()
+    return row["cnt"] if row else 0
+
+
 # ─── Life Events ────────────────────────────────────────────────
 
 async def insert_life_event(conn: aiosqlite.Connection, event: LifeEvent) -> LifeEvent:
@@ -223,6 +246,37 @@ async def get_recent_life_events(conn: aiosqlite.Connection, limit: int = 10) ->
     cursor = await conn.execute(
         "SELECT * FROM life_events ORDER BY created_at DESC LIMIT ?", (limit,)
     )
+    return [dict(r) for r in await cursor.fetchall()]
+
+
+async def get_latest_life_event(conn: aiosqlite.Connection) -> Optional[dict]:
+    """Return the newest life event across all users."""
+    cursor = await conn.execute(
+        "SELECT * FROM life_events ORDER BY created_at DESC, event_id DESC LIMIT 1"
+    )
+    row = await cursor.fetchone()
+    return dict(row) if row else None
+
+
+async def get_recent_life_events_for_user(
+    conn: aiosqlite.Connection,
+    user_id: str,
+    limit: int = 10,
+    unshared_only: bool = False,
+) -> list[dict]:
+    """Return recent life events, optionally excluding events already shared to user."""
+    if unshared_only:
+        cursor = await conn.execute(
+            """SELECT * FROM life_events
+               WHERE shared_with_users NOT LIKE ?
+               ORDER BY created_at DESC, event_id DESC LIMIT ?""",
+            (f'%"{user_id}"%', limit),
+        )
+    else:
+        cursor = await conn.execute(
+            "SELECT * FROM life_events ORDER BY created_at DESC, event_id DESC LIMIT ?",
+            (limit,),
+        )
     return [dict(r) for r in await cursor.fetchall()]
 
 
