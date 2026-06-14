@@ -78,12 +78,7 @@ class LifeScheduler:
 
     @staticmethod
     def _should_try_social(user_message: str, reason: str) -> bool:
-        if reason not in {"regular", "catchup"}:
-            return False
-        known_names = [
-            "wtt", "ccx", "mxt", "mcyy", "吴田田", "蔡楚娴", "毛雪婷", "颜姐",
-        ]
-        return any(name.lower() in user_message.lower() for name in known_names)
+        return reason in {"regular", "catchup"}
 
     @staticmethod
     def _life_event_to_dict(event: LifeEvent) -> dict:

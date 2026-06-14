@@ -201,6 +201,7 @@
 - 后台真实定时器：第一版可先用 postprocess 后的 `maybe_advance()` 检查。
 - 持久化 receptivity：第一版先规则推断，后续再入库。
 - 更细的主动分享冷却：第一版只做每日 1 条和基础冷却。
+- 主动分享元数据：第一版只在运行时直接发送成功后标记 `life_event` 已分享；后续若平台发送失败并延迟从 `proactive_queue` 补发，需要在任务中保存 `life_event_id` 或 metadata，让 dispatcher 成功发送后也能调用 `mark_event_shared()`。
 
 本期不做：
 

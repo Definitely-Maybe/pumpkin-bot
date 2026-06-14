@@ -104,16 +104,32 @@ class LifeContextSelector:
         category = event.get("category", "")
         description = event.get("description", "")
         score = 0.15 + (receptivity.score * 0.25)
+        user_cue = False
+        explicit_ask = (
+            "?" in user_message
+            or "？" in user_message
+            or "你最近" in user_message
+            or "你今天" in user_message
+        )
 
         for keyword in cls._TOPIC_KEYWORDS.get(category, []):
-            if keyword.lower() in user_message.lower() or keyword.lower() in description.lower():
+            keyword_lower = keyword.lower()
+            if keyword_lower in user_message.lower():
                 score += 0.2
+                user_cue = True
+            elif keyword_lower in description.lower() and (user_cue or explicit_ask):
+                score += 0.05
 
         for keyword in ["累", "困", "没电", "低电量"]:
             if keyword in user_message and keyword in description:
                 score += 0.25
+                user_cue = True
 
-        if "?" in user_message or "？" in user_message or "你最近" in user_message or "你今天" in user_message:
+        if explicit_ask:
             score += 0.15
+            user_cue = True
+
+        if not user_cue and receptivity.label != "high":
+            return 0.0
 
         return round(min(1.0, score), 2)

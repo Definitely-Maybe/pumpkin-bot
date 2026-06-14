@@ -93,3 +93,34 @@ async def test_social_adapter_failure_does_not_block_life_generation(tmp_path):
         assert len(stored) == 2
     finally:
         await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_regular_life_advance_lets_social_scheduler_decide_without_name_mention(tmp_path):
+    conn = await init_db(tmp_path / "life-scheduler-social-regular.db")
+    try:
+        now = datetime(2026, 6, 15, 12, 0, 0)
+        await q.insert_life_event(conn, LifeEvent(
+            event_type="life",
+            category="daily",
+            description="上一次生活事件",
+            created_at=(now - timedelta(hours=7)).strftime("%Y-%m-%d %H:%M:%S"),
+        ))
+
+        class RecordingAdapter:
+            def __init__(self):
+                self.calls = []
+
+            async def maybe_advance(self, user_message="", diagnostics=None):
+                self.calls.append(user_message)
+                return [{"event_id": 99, "event_type": "social", "description": "社交弧推进"}]
+
+        adapter = RecordingAdapter()
+        scheduler = LifeScheduler(conn, social_adapter=adapter)
+
+        events = await scheduler.maybe_advance(now=now, user_message="今天随便聊聊")
+
+        assert adapter.calls == ["今天随便聊聊"]
+        assert any(event.get("event_type") == "social" for event in events)
+    finally:
+        await conn.close()

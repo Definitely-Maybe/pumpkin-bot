@@ -77,6 +77,22 @@ def test_selector_blocks_when_user_is_in_strong_distress():
     assert result is None
 
 
+def test_selector_does_not_inject_daily_event_on_unrelated_message():
+    selector = LifeContextSelector()
+    events = [
+        {"event_id": 3, "event_type": "life", "category": "daily", "description": "中午吃了个饭。", "shared_with_users": "[]"},
+    ]
+
+    result = selector.select(
+        user=make_user(),
+        user_message="这个作业我想换个写法",
+        events=events,
+        receptivity=ReceptivityResult(score=0.6, label="neutral"),
+    )
+
+    assert result is None
+
+
 def test_format_prompt_context_uses_optional_language():
     selector = LifeContextSelector()
     candidate = selector.select(
