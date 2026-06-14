@@ -231,14 +231,17 @@ async def count_proactive_today_by_types(
 # ─── Life Events ────────────────────────────────────────────────
 
 async def insert_life_event(conn: aiosqlite.Connection, event: LifeEvent) -> LifeEvent:
+    created_at = event.created_at or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     cursor = await conn.execute(
-        """INSERT INTO life_events (event_type, category, description, characters_involved, emotion, causality_chain_id)
-           VALUES (?, ?, ?, ?, ?, ?)""",
+        """INSERT INTO life_events (event_type, category, description, characters_involved, emotion, causality_chain_id, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
         (event.event_type, event.category, event.description,
-         event.characters_involved, event.emotion, event.causality_chain_id),
+         event.characters_involved, event.emotion, event.causality_chain_id,
+         created_at),
     )
     await conn.commit()
     event.event_id = cursor.lastrowid
+    event.created_at = created_at
     return event
 
 

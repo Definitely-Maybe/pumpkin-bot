@@ -8,16 +8,6 @@ from src.storage.models import LifeEvent
 from src.storage import queries as q
 
 
-async def _set_latest_life_event_created_at(conn, created_at: str):
-    await conn.execute(
-        """UPDATE life_events
-           SET created_at = ?
-           WHERE event_id = (SELECT MAX(event_id) FROM life_events)""",
-        (created_at,),
-    )
-    await conn.commit()
-
-
 @pytest.mark.asyncio
 async def test_maybe_advance_creates_initial_event(tmp_path):
     conn = await init_db(tmp_path / "life-scheduler-initial.db")
@@ -45,10 +35,6 @@ async def test_maybe_advance_recent_event_returns_zero(tmp_path):
             description="刚刚发生过",
             created_at=(now - timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S"),
         ))
-        await _set_latest_life_event_created_at(
-            conn,
-            (now - timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S"),
-        )
         scheduler = LifeScheduler(conn)
 
         events = await scheduler.maybe_advance(now=now)
@@ -71,10 +57,6 @@ async def test_maybe_advance_catchup_caps_at_three(tmp_path):
             description="很久以前",
             created_at=(now - timedelta(days=5)).strftime("%Y-%m-%d %H:%M:%S"),
         ))
-        await _set_latest_life_event_created_at(
-            conn,
-            (now - timedelta(days=5)).strftime("%Y-%m-%d %H:%M:%S"),
-        )
         scheduler = LifeScheduler(conn)
 
         events = await scheduler.maybe_advance(now=now)
@@ -97,10 +79,6 @@ async def test_social_adapter_failure_does_not_block_life_generation(tmp_path):
             description="上一次生活事件",
             created_at=(now - timedelta(hours=7)).strftime("%Y-%m-%d %H:%M:%S"),
         ))
-        await _set_latest_life_event_created_at(
-            conn,
-            (now - timedelta(hours=7)).strftime("%Y-%m-%d %H:%M:%S"),
-        )
 
         class FailingAdapter:
             async def maybe_advance(self, user_message="", diagnostics=None):

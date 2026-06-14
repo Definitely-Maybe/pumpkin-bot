@@ -56,6 +56,26 @@ async def test_get_latest_life_event_returns_newest(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_insert_life_event_respects_created_at(tmp_path):
+    conn = await init_db(tmp_path / "life-created-at.db")
+    try:
+        created_at = "2026-06-01 08:30:00"
+        inserted = await q.insert_life_event(conn, LifeEvent(
+            event_type="life",
+            category="daily",
+            description="带时间的生活事件",
+            created_at=created_at,
+        ))
+
+        latest = await q.get_latest_life_event(conn)
+
+        assert inserted.created_at == created_at
+        assert latest["created_at"] == created_at
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
 async def test_get_recent_life_events_for_user_filters_shared(tmp_path):
     conn = await init_db(tmp_path / "life-unshared.db")
     try:
