@@ -264,4 +264,6 @@ class TriggerManager:
         for e in unshared_events:
             if e.get("category") == "daily":
                 return True
+            if e.get("event_type") == "life" and e.get("category") != "night_reflection":
+                return True
         return False

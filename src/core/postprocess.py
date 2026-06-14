@@ -260,7 +260,7 @@ class PostProcessor:
         await self._check_branch_drift(session, system_prompt)
 
         # 8. 主动消息触发检查（6 种触发器）
-        await self._check_proactive_triggers(session, system_prompt)
+        await self._check_proactive_triggers(session, system_prompt, incoming_text)
 
         # 9. 社交模拟 tick（后台生成社交事件）
         await self._social_tick(session, incoming_text)
@@ -448,7 +448,10 @@ class PostProcessor:
             self._debug.sidecar(7, icon, "分支信号", f"{streak_info}{gap}")
 
     async def _check_proactive_triggers(
-        self, session: UserSession, system_prompt: str,
+        self,
+        session: UserSession,
+        system_prompt: str,
+        user_message: str = "",
     ):
         """检查 6 种主动消息触发条件，生成消息并入队。"""
         if not self.llm:
@@ -464,6 +467,15 @@ class PostProcessor:
         if daily_count >= 3:
             return
 
+        try:
+            life_shares_today = await q.count_proactive_today_by_types(
+                self.db,
+                user.user_id,
+                [TriggerType.SOCIAL_SHARE, TriggerType.LIFE_STORY],
+            )
+        except Exception:
+            life_shares_today = 0
+
         # 深夜判断
         hour = datetime.now().hour
         is_late_night = hour >= 22 or hour <= 2
@@ -474,18 +486,43 @@ class PostProcessor:
         except Exception:
             open_loops = []
 
-        # 加载未分享的 life_events
+        # 加载未分享的 life_events，并先通过生活分享策略筛掉不自然的素材。
         try:
-            unshared = await q.get_unshared_life_events(self.db, user.user_id, limit=5)
+            unshared = await q.get_recent_life_events_for_user(
+                self.db, user.user_id, limit=10, unshared_only=True,
+            )
         except Exception:
             unshared = []
+
+        life_decision = None
+        selected_life_events = []
+        try:
+            from ..simulation.life_receptivity import LifeReceptivity
+            from ..simulation.life_sharing_policy import LifeSharingPolicy
+
+            messages = [*session.history]
+            if user_message:
+                messages.append({"role": "user", "content": user_message})
+            receptivity = LifeReceptivity.estimate(messages)
+            life_decision = LifeSharingPolicy().select_event(
+                user=user,
+                user_message=user_message,
+                events=unshared,
+                receptivity=receptivity,
+                life_shares_today=life_shares_today,
+            )
+            if life_decision.should_share and life_decision.event:
+                selected_life_events = [life_decision.event]
+        except Exception:
+            life_decision = None
+            selected_life_events = []
 
         # 触发决策（纯逻辑，不调 LLM）
         from ..proactive.trigger_manager import TriggerManager
         triggers = await TriggerManager.check_all(
             user=user,
             open_loops=open_loops,
-            unshared_events=unshared,
+            unshared_events=selected_life_events,
             daily_sent_count=daily_count,
             is_late_night=is_late_night,
         )
@@ -496,6 +533,14 @@ class PostProcessor:
         # 生成消息（调 LLM）
         for trigger_type, context in triggers:
             extra_context = context or ""
+            life_event_id = None
+            if (
+                life_decision
+                and life_decision.should_share
+                and trigger_type == life_decision.trigger_type
+            ):
+                extra_context = life_decision.instruction
+                life_event_id = life_decision.event.get("event_id") if life_decision.event else None
             try:
                 msg = await self.llm.generate_proactive(
                     user_name=user.display_name or "朋友",
@@ -512,6 +557,8 @@ class PostProcessor:
                         sent = await self._proactive_sender(user.user_id, [msg])
                         if sent and task_id:
                             await q.mark_proactive_sent(self.db, task_id)
+                            if life_event_id:
+                                await q.mark_event_shared(self.db, life_event_id, user.user_id)
                     # milestone 去重
                     if trigger_type == TriggerType.MILESTONE and context:
                         await q.log_relationship_event(
@@ -524,10 +571,10 @@ class PostProcessor:
 
         if hasattr(self, '_debug') and self._debug:
             from ..proactive.trigger_manager import TriggerManager
-            diag = TriggerManager.diagnose_all(
+            diag = await TriggerManager.diagnose_all(
                 user=session.user,
                 open_loops=open_loops,
-                unshared_events=unshared,
+                unshared_events=selected_life_events,
                 daily_sent_count=daily_count,
                 is_late_night=is_late_night,
             )
