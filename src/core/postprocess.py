@@ -262,8 +262,8 @@ class PostProcessor:
         # 8. 主动消息触发检查（6 种触发器）
         await self._check_proactive_triggers(session, system_prompt, incoming_text)
 
-        # 9. 社交模拟 tick（后台生成社交事件）
-        await self._social_tick(session, incoming_text)
+        # 9. 生活模拟 tick（后台生成日常生活事件，社交只是其中一部分）
+        await self._life_tick(session, incoming_text)
 
         # 10. 人格进化 tick（检查触发，执行反思+写回）
         await self._evolution_tick(session, incoming_text)
@@ -638,6 +638,40 @@ class PostProcessor:
                     f"{arc_count} 条弧无新事件")
             else:
                 self._debug.sidecar(9, "🎭", "社交模拟", "无活跃弧")
+
+    async def _life_tick(self, session: UserSession, user_message: str):
+        """生活模拟：按时间推进南瓜的日常，必要时交给社交适配器。"""
+        diag: dict = {}
+        try:
+            from ..simulation.life_scheduler import LifeScheduler
+            if not hasattr(self, '_life_scheduler'):
+                self._life_scheduler = LifeScheduler(self.db, self.llm)
+            events = await self._life_scheduler.maybe_advance(
+                user_message=user_message,
+                diagnostics=diag,
+            )
+        except Exception:
+            events = []
+            diag["life_error"] = True
+
+        if hasattr(self, '_debug') and self._debug:
+            if diag.get("life_error"):
+                self._debug.sidecar(9, "⏭️", "生活模拟", "生活调度失败，已跳过")
+                return
+
+            reason = diag.get("life_reason", "unknown")
+            due = diag.get("life_due", False)
+            if events:
+                lines = [f"生成 {len(events)} 件生活事件（reason={reason}）"]
+                for event in events[:3]:
+                    desc = event.get("description") or event.get("event_description") or ""
+                    if desc:
+                        lines.append(f"- {desc}")
+                self._debug.sidecar(9, "🌿", "生活模拟", "\n".join(lines))
+            elif due:
+                self._debug.sidecar(9, "🌿", "生活模拟", f"到期但无新事件（reason={reason}）")
+            else:
+                self._debug.sidecar(9, "⏭️", "生活模拟", f"未到推进时间（reason={reason}）")
 
     async def _evolution_tick(self, session: UserSession, user_message: str):
         """人格进化：检查触发条件，执行反思+写回。失败不阻塞 pipeline。"""
