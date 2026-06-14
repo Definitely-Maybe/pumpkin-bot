@@ -40,6 +40,19 @@ def test_forced_dormant_from_any_state():
         assert done is True
 
 
+def test_setup_advance_does_not_randomly_end_before_story_starts(monkeypatch):
+    """酝酿阶段的第一步不能随机烂尾，否则生命周期测试会偶发失败。"""
+    monkeypatch.setattr(
+        "src.social.arcs.random.choices",
+        lambda choices, weights, k: [ArcState.DORMANT],
+    )
+
+    s, done = ArcStateMachine.advance(ArcState.SETUP, force_dormant=False)
+
+    assert s == ArcState.RISING
+    assert done is False
+
+
 def test_romance_arc_has_min_events():
     """浪漫弧至少 3 个事件。"""
     for _ in range(20):

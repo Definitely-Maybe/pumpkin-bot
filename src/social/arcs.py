@@ -77,9 +77,8 @@ class ArcStateMachine:
 
         # 按阶段加权选择
         if current == ArcState.SETUP:
-            # 酝酿 → 发展（大概率）或 烂尾（小概率）
-            weights = [0.85 if c == ArcState.RISING else 0.15 for c in choices]
-            next_state = random.choices(choices, weights=weights, k=1)[0]
+            # 酝酿阶段至少给故事一个开始；烂尾从发展阶段开始出现。
+            next_state = ArcState.RISING
         elif current == ArcState.RISING:
             # 发展 → 高潮（70%）/ 反转回酝酿（20%）/ 烂尾（10%）
             wmap = {ArcState.CLIMAX: 0.70, ArcState.SETUP: 0.20, ArcState.DORMANT: 0.10}
