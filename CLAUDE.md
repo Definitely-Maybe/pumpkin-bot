@@ -149,6 +149,18 @@ MessageBus.on_message(user_id, platform, user_message)
 - **不删除 `src/core/llm.py` 中的 `generate_summary` / `detect_open_loop`** — 外部仍在调用
 - **不在 session.py 的 resolve() 中做 DB 写入** — familiarity 只修改内存中的 user 对象
 
+## 发布规定
+
+- 每次发布版本前必须更新根目录 `VERSION`。
+- 每次发布版本前必须更新根目录 `CHANGELOG.md`，使用 GitHub 常见的分点更新日志格式：
+  - `## [x.y] - YYYY-MM-DD`
+  - `### Added`
+  - `### Changed`
+  - `### Fixed`
+  - `### Tests`
+- 更新日志必须写清用户可感知变化、架构变化、修复项和验证结果。
+- 版本 tag 使用 `vX.Y` 格式，例如 `v0.2`。
+
 ## 常用命令
 
 ```bash
