@@ -1,0 +1,110 @@
+﻿# 南瓜 Bot 配置文件
+# 所有路径相对于项目根目录 (nan-gua-bot/)
+
+# --- 人格源文件 ---
+persona:
+  persona_md_path: "data/persona.md"
+  self_md_path: "data/self.md"
+  skill_md_path: "data/skill.md"
+  hot_reload: true          # 监听文件变化自动重载
+  reload_interval_ms: 3000
+
+# --- DeepSeek API ---
+llm:
+  provider: "deepseek"
+  model: "deepseek-chat"
+  base_url: "https://api.deepseek.com"
+  max_tokens: 1024
+  temperature: 0.8
+  # API key 从环境变量 DEEPSEEK_API_KEY 读取
+
+# --- 存储 ---
+storage:
+  db_path: "data/bot.db"
+  log_path: "data/logs"
+
+# --- 关系状态机 ---
+relationship:
+  # 升级阈值
+  acquaintance_threshold:
+    min_interactions: 10
+    min_deep_topics: 2
+    min_days_since_first: 3
+  trusted_threshold:
+    min_interactions: 50
+    min_deep_topics: 5
+    min_user_initiated: 5
+    min_days_since_first: 14
+  # 衰减
+  inactivity_days_before_decay: 30
+  decay_rate: 0.1
+
+# --- 主动消息 ---
+proactive:
+  enabled: true
+  max_per_user_per_day: 3
+  cooldown_after_conversation_minutes: 120
+  send_delay_min_seconds: 60
+  send_delay_max_seconds: 900
+  pause_after_consecutive_no_reply: 3
+  triggers:
+    inactivity:
+      enabled: true
+      check_interval_minutes: 60
+    time_of_day:
+      enabled: true
+      peak_hours: [22, 23, 0]  # 南瓜活跃时段
+    milestone:
+      enabled: true
+      intervals: [50, 100, 200, 500, 1000]
+
+# --- 社交模拟 ---
+simulation:
+  enabled: true
+  daily_events_min: 1
+  daily_events_max: 3
+  deep_event_interval_days: [2, 4]  # 深度事件的间隔范围
+  known_characters:
+    - name: "MCYY"
+      weekly_frequency: [2, 3]
+      persona_ref: "self.md ### MCYY"
+    - name: "颜姐"
+      weekly_frequency: [1, 2]
+      persona_ref: "self.md ### 颜佳琳"
+    - name: "台晓丹"
+      weekly_frequency: [0, 1]
+      persona_ref: "self.md ### 台晓丹"
+  night_reflection:
+    enabled: true
+    weekly_frequency: [1, 2]
+    peak_hour: 23
+
+# --- 人格进化 ---
+evolution:
+  enabled: true
+  reflection:
+    day_of_week: 6       # 周日 (0=Mon, 6=Sun)
+    hour: 23
+  auto_write_back: true   # 自动写回 self.md
+  require_user_approval: false  # 写回前是否需要用户确认
+
+# --- 速率限制 ---
+rate_limit:
+  max_outgoing_per_hour: 30
+  max_outgoing_per_day: 100
+  typing_delay_min_ms: 500
+  typing_delay_max_ms: 3000
+
+# --- 平台 ---
+platforms:
+  terminal:
+    enabled: true
+  wechat:
+    enabled: false               # 要测微信时改 true
+    appid: "wx_your_appid_here"
+    secret: "your_appsecret_here"
+    token: "your_custom_token"
+    mcp_port: 8090
+
+# --- 调试 ---
+debug_level: 0   # 0=关, 1=仅 sidecar, 2=完整 pipeline

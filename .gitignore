@@ -1,0 +1,35 @@
+# Secrets / local environment
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Runtime data
+data/*.db
+data/*.db-*
+data/*.log
+data/logs/
+data/versions/
+
+# Local persona / memory files
+data/persona.md
+data/self.md
+data/skill.md
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
