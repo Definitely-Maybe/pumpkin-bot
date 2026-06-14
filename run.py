@@ -112,6 +112,10 @@ async def main():
     session_mgr = SessionManager(db)
     postprocessor = PostProcessor(
         db, llm, summary_writer, loop_detector, branch_detector=None,
+        self_memory=self_memory,
+        persona_path=persona_path,
+        self_md_path=self_md_path,
+        config=config,
         debug_logger=debug_logger,
     )
 

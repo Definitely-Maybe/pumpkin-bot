@@ -7,6 +7,13 @@ from typing import Optional
 
 from ..storage.models import RelationshipType
 
+BRANCH_RELATIONSHIPS = {
+    RelationshipType.BROTHER,
+    RelationshipType.RESPECTED,
+    RelationshipType.CRUSH,
+}
+DETECTABLE_RELATIONSHIPS = {RelationshipType.TRUSTED, *BRANCH_RELATIONSHIPS}
+
 # 互损风格信号词
 MUTUAL_ROASTING_SIGNALS = [
     "滚滚滚", "滚吧", "傻逼", "你他妈", "你tm",
@@ -146,8 +153,8 @@ class BranchDetector:
     ) -> Optional[RelationshipType]:
         """纯规则检测（同步），零成本。"""
 
-        # 只在 trusted 阶段触发分支检测
-        if current_relationship != RelationshipType.TRUSTED:
+        # trusted 阶段用于切入分支；分支阶段继续检测用于判断是否回退
+        if current_relationship not in DETECTABLE_RELATIONSHIPS:
             return None
 
         # 数据不足
@@ -185,8 +192,8 @@ class BranchDetector:
         规则命中 → 直接返回；边界 case → LLM 分类。
         用于 sidecar 异步阶段，不影响当前轮回复。
         """
-        # 只在 trusted 阶段触发
-        if current_relationship != RelationshipType.TRUSTED:
+        # trusted 阶段用于切入分支；分支阶段继续检测用于判断是否回退
+        if current_relationship not in DETECTABLE_RELATIONSHIPS:
             return None
 
         # 数据不足
@@ -221,7 +228,10 @@ class BranchDetector:
                 user_texts, system_prompt,
             )
             if llm_result is not None:
-                return llm_result
+                try:
+                    return RelationshipType(llm_result)
+                except ValueError:
+                    return None
 
         # 4. LLM 不可用或失败 → 回退到规则结果
         return rule_result

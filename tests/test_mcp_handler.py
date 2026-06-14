@@ -64,6 +64,28 @@ class TestMCPHandler:
         data = json.loads(text)
         assert "success" in data
 
+    async def test_handle_async_send_message_calls_wechat_protocol(self, monkeypatch):
+        """FastAPI 的 async path 应调用真实 send_message tool，而不是恒定失败。"""
+        calls = []
+
+        async def fake_send(user_openid, content):
+            calls.append((user_openid, content))
+            return True
+
+        monkeypatch.setattr(
+            "wechat_mcp_server.mcp_handler.WeChatProtocol.send_custom_message",
+            fake_send,
+        )
+        result = await self.handler.handle_async("tools/call", {
+            "name": "send_message",
+            "arguments": {"user_openid": "test_user", "content": "hello"},
+        })
+
+        text = result["content"][0]["text"]
+        data = json.loads(text)
+        assert data["success"] is True
+        assert calls == [("test_user", "hello")]
+
     def test_handle_tools_call_get_server_status(self):
         result = self.handler.handle("tools/call", {
             "name": "get_server_status",

@@ -9,7 +9,7 @@ class MessageQueue:
 
     def __init__(self, maxlen: int = 1000):
         self._items: deque[dict] = deque(maxlen=maxlen)
-        self._cursors: dict[str, int] = {}  # openid → 下次 start index
+        self._cursors: dict[str, int] = {}  # openid → 下次 sequence
         self._seen_msg_ids: set[str] = set()
         self._counter = 0
 
@@ -20,8 +20,10 @@ class MessageQueue:
             return {}
         if msg_id:
             self._seen_msg_ids.add(msg_id)
+        seq = self._counter
         msg = {
-            "msg_id": msg_id or str(self._counter),
+            "_seq": seq,
+            "msg_id": msg_id or str(seq),
             "user_openid": user_openid,
             "msg_type": msg_type,
             "content": content,
@@ -34,14 +36,11 @@ class MessageQueue:
     def poll(self, user_openid: str) -> list[dict]:
         """返回该用户自上次 poll 以来的新消息。"""
         cursor = self._cursors.get(user_openid, 0)
-        # 用 cursor 定位——简单实现：遍历所有消息找该用户的新消息
         msgs = []
-        for i in range(cursor, len(self._items)):
-            item = self._items[i]
-            if item["user_openid"] == user_openid:
-                msgs.append(item)
-        # 更新 cursor 到最后检查的位置
-        self._cursors[user_openid] = len(self._items)
+        for item in self._items:
+            if item["user_openid"] == user_openid and item["_seq"] >= cursor:
+                msgs.append({k: v for k, v in item.items() if k != "_seq"})
+        self._cursors[user_openid] = self._counter
         return msgs
 
     @property

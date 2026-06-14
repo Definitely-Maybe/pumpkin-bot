@@ -32,6 +32,7 @@ class PostProcessor:
                  persona_path: str = "",
                  self_md_path: str = "",
                  config: dict = None,
+                 proactive_sender=None,
                  debug_logger=None):
         self.db = db
         self.llm = llm  # LLMEngine 实例（用于 open_loop 检测和摘要生成）
@@ -42,7 +43,15 @@ class PostProcessor:
         self._persona_path = persona_path
         self._self_md_path = self_md_path
         self._config = config or {}
+        self._proactive_sender = proactive_sender
         self._debug = debug_logger
+
+    def set_proactive_sender(self, sender):
+        """Set a runtime sender for proactive messages.
+
+        sender signature: async (user_id: str, messages: list[str]) -> bool
+        """
+        self._proactive_sender = sender
 
     def process(self, response: LLMResponse) -> OutgoingBurst:
         """拆分短句。"""
@@ -192,7 +201,7 @@ class PostProcessor:
                     full_summary = f"[{time_span}] {summary}"
                     await q.insert_summary(
                         self.db, user_id, full_summary,
-                        range_start=0, range_end=session.user.interaction_count,
+                        range_start=0, range_end=outgoing_msg.message_id or 0,
                     )
                     # 提取话题关键词并写入 users.topics_discussed
                     topics = SummaryWriter.extract_topics(summary)
@@ -320,46 +329,96 @@ class PostProcessor:
         except Exception:
             return  # LLM 调用失败不阻塞 pipeline
 
-        # 更新 streak
-        current_branch_type = (
-            RelationshipType(user.branch_type) if user.branch_type else None
+        branch_relationships = {
+            RelationshipType.BROTHER,
+            RelationshipType.RESPECTED,
+            RelationshipType.CRUSH,
+        }
+
+        def parse_branch(value: str | None) -> RelationshipType | None:
+            if not value:
+                return None
+            try:
+                branch = RelationshipType(value)
+            except ValueError:
+                return None
+            return branch if branch in branch_relationships else None
+
+        active_branch_type = (
+            user.relationship_type
+            if user.relationship_type in branch_relationships
+            else None
         )
-        signal_match = detected_branch is not None and detected_branch == current_branch_type
-        new_streak = update_streak(user.branch_signal_streak, signal_match)
+        current_branch_type = parse_branch(user.branch_type)
 
-        # 检查切入分支
-        if should_activate_branch(new_streak, current_branch_type) and detected_branch:
-            old_type = user.relationship_type.value
-            user.relationship_type = detected_branch
-            user.branch_type = detected_branch.value
-            user.branch_signal_streak = 0  # 切入后重置
-            await q.upsert_user(self.db, user)
-            await q.log_relationship_event(
-                self.db, user.user_id, "branch_activate",
-                {"type": old_type, "branch": None},
-                {"type": detected_branch.value, "branch": detected_branch.value},
-            )
-            return
+        # 分支关系本身是 active branch；branch_type 缺失时补齐，避免无法回退。
+        if active_branch_type and current_branch_type != active_branch_type:
+            current_branch_type = active_branch_type
+            user.branch_type = active_branch_type.value
 
-        # 检查回退分支
-        if should_retreat_branch(new_streak, current_branch_type):
-            old_type = user.relationship_type.value
-            old_branch = user.branch_type
-            user.relationship_type = RelationshipType.TRUSTED
-            user.branch_type = None
-            user.branch_signal_streak = 0  # 回退后重置
-            await q.upsert_user(self.db, user)
-            await q.log_relationship_event(
-                self.db, user.user_id, "branch_retreat",
-                {"type": old_type, "branch": old_branch},
-                {"type": "trusted", "branch": None},
-            )
-            return
+        if active_branch_type:
+            signal_match = detected_branch == active_branch_type
+            new_streak = update_streak(user.branch_signal_streak, signal_match)
 
-        # 仅更新 streak（无切入/回退）
-        if new_streak != user.branch_signal_streak:
-            user.branch_signal_streak = new_streak
-            await q.upsert_user(self.db, user)
+            if should_retreat_branch(new_streak, active_branch_type):
+                old_type = user.relationship_type.value
+                old_branch = user.branch_type
+                user.relationship_type = RelationshipType.TRUSTED
+                user.branch_type = None
+                user.branch_signal_streak = 0  # 回退后重置
+                await q.upsert_user(self.db, user)
+                await q.log_relationship_event(
+                    self.db, user.user_id, "branch_retreat",
+                    {"type": old_type, "branch": old_branch},
+                    {"type": "trusted", "branch": None},
+                )
+                return
+
+            if (
+                new_streak != user.branch_signal_streak
+                or user.branch_type != active_branch_type.value
+            ):
+                user.branch_signal_streak = new_streak
+                user.branch_type = active_branch_type.value
+                await q.upsert_user(self.db, user)
+        else:
+            if detected_branch:
+                if current_branch_type == detected_branch:
+                    new_streak = update_streak(user.branch_signal_streak, True)
+                else:
+                    current_branch_type = detected_branch
+                    user.branch_type = detected_branch.value
+                    new_streak = 1
+            else:
+                new_streak = update_streak(user.branch_signal_streak, False)
+                if new_streak <= 0:
+                    current_branch_type = None
+                    user.branch_type = None
+
+            if should_activate_branch(new_streak, None) and current_branch_type:
+                old_type = user.relationship_type.value
+                user.relationship_type = current_branch_type
+                user.branch_type = current_branch_type.value
+                user.branch_signal_streak = 0  # 切入后重置
+                await q.upsert_user(self.db, user)
+                await q.log_relationship_event(
+                    self.db, user.user_id, "branch_activate",
+                    {"type": old_type, "branch": None},
+                    {
+                        "type": current_branch_type.value,
+                        "branch": current_branch_type.value,
+                    },
+                )
+                return
+
+            if (
+                new_streak != user.branch_signal_streak
+                or user.branch_type != (
+                    current_branch_type.value if current_branch_type else None
+                )
+            ):
+                user.branch_signal_streak = new_streak
+                await q.upsert_user(self.db, user)
 
         if hasattr(self, '_debug') and self._debug:
             streak_info = ""
@@ -446,9 +505,13 @@ class PostProcessor:
                     relationship_type=user.relationship_type.value,
                 )
                 if msg:
-                    await q.enqueue_proactive(
+                    task_id = await q.enqueue_proactive(
                         self.db, user.user_id, trigger_type, msg,
                     )
+                    if self._proactive_sender:
+                        sent = await self._proactive_sender(user.user_id, [msg])
+                        if sent and task_id:
+                            await q.mark_proactive_sent(self.db, task_id)
                     # milestone 去重
                     if trigger_type == TriggerType.MILESTONE and context:
                         await q.log_relationship_event(

@@ -43,6 +43,8 @@ class MessageBus:
         else:
             self.adapters = []
         self.adapter = self.adapters[0] if self.adapters else None  # backward compat
+        if hasattr(self.postprocess, "set_proactive_sender"):
+            self.postprocess.set_proactive_sender(self.send_proactive)
 
     def _find_adapter(self, user_id: str):
         """根据 user_id 推断平台 adapter。"""
@@ -53,6 +55,14 @@ class MessageBus:
                 return adapter
         # fallback: 第一个 adapter
         return self.adapters[0] if self.adapters else None
+
+    async def send_proactive(self, user_id: str, messages: list[str]) -> bool:
+        """发送主动消息到用户所属平台。"""
+        adapter = self._find_adapter(user_id)
+        if not adapter:
+            return False
+        await adapter.send(user_id, messages)
+        return True
 
     async def on_message(self, user_id: str, text: str):
         """完整流水线：Adapter → Stage 1-4 → Adapter。"""

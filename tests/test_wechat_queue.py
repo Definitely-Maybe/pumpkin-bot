@@ -39,6 +39,17 @@ class TestMessageQueue:
         contents = [m["content"] for m in msgs]
         assert "msg0" not in contents
 
+    def test_poll_after_maxlen_overflow_returns_new_messages(self):
+        mq = MessageQueue(maxlen=3)
+        for i in range(3):
+            mq.push("u", "text", f"msg{i}", str(i))
+        assert len(mq.poll("u")) == 3
+
+        mq.push("u", "text", "msg3", "3")
+
+        msgs = mq.poll("u")
+        assert [m["content"] for m in msgs] == ["msg3"]
+
     def test_poll_empty_returns_empty_list(self):
         mq = MessageQueue()
         assert mq.poll("unknown_user") == []

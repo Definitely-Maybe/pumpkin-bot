@@ -43,7 +43,7 @@ def test_detect_signals_respected():
 def test_detect_signals_crush():
     messages = ["想你", "在干嘛", "睡不着", "陪我"]
     result = detect_branch_signals(messages, late_night_ratio=0.3, initiative_ratio=0.1)
-    assert result == RelationshipType.CRUSH
+    assert result is RelationshipType.CRUSH
 
 
 def test_detect_signals_none():
@@ -221,6 +221,29 @@ async def test_detector_with_fallback_boundary_no_llm():
     )
     # 无 LLM 时回退到规则结果（规则判定为 None，因为只有 2 个信号词）
     assert result is None
+
+
+@pytest.mark.asyncio
+async def test_detector_with_fallback_converts_llm_result_to_relationship_type():
+    """LLM 兜底返回字符串时，检测器应保持 RelationshipType 契约。"""
+
+    class FakeLLM:
+        async def classify_branch(self, user_texts, system_prompt):
+            return "crush"
+
+    detector = BranchDetector(llm=FakeLLM())
+    result = await detector.detect_with_fallback(
+        recent_messages=[
+            {"role": "user", "content": "想你"},
+            {"role": "user", "content": "在干嘛"},
+        ],
+        interaction_count=50,
+        late_night_count=15,
+        user_initiated_count=20,
+        current_relationship=RelationshipType.TRUSTED,
+    )
+
+    assert result is RelationshipType.CRUSH
 
 
 @pytest.mark.asyncio

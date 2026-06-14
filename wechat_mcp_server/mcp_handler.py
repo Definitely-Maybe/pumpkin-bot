@@ -121,9 +121,13 @@ class MCPHandler:
         arguments = params.get("arguments", {})
 
         if tool_name == "send_message":
-            return {
-                "content": [{"type": "text", "text": json.dumps({"success": False}, ensure_ascii=False)}],
-            }
+            try:
+                result_text = await self._tool_send_message_async(arguments)
+                return {
+                    "content": [{"type": "text", "text": json.dumps(result_text, ensure_ascii=False)}],
+                }
+            except Exception as e:
+                return {"error": {"code": -32603, "message": str(e)}}
 
         return self._handle_tools_call(params)
 

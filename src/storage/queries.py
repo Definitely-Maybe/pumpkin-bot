@@ -38,6 +38,8 @@ async def upsert_user(conn: aiosqlite.Connection, user: User) -> User:
            branch_signal_streak=excluded.branch_signal_streak,
            branch_type=excluded.branch_type,
            relationship_type=excluded.relationship_type,
+           topics_discussed=excluded.topics_discussed,
+           shared_jokes=excluded.shared_jokes,
            notes=excluded.notes,
            updated_at=excluded.updated_at""",
         (
@@ -166,13 +168,14 @@ async def enqueue_proactive(
     trigger_type: TriggerType,
     message: str,
     scheduled_for: Optional[str] = None,
-):
-    await conn.execute(
+) -> int:
+    cursor = await conn.execute(
         """INSERT INTO proactive_queue (user_id, trigger_type, proposed_message, scheduled_for)
            VALUES (?, ?, ?, ?)""",
         (user_id, trigger_type.value, message, scheduled_for),
     )
     await conn.commit()
+    return cursor.lastrowid
 
 
 async def get_pending_proactive(conn: aiosqlite.Connection, user_id: str) -> list[dict]:
